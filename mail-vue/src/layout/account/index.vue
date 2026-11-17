@@ -26,6 +26,12 @@
                       :aria-pressed="accountStore.currentAccountId === item.accountId" @click="changeAccount(item)">
                 {{ item.email.split('@')[0] }}
               </button>
+              <button type="button" class="account-actions account-copy"
+                      :title="`${$t('copyMailboxAddress')}: ${item.email}`"
+                      :aria-label="`${$t('copyMailboxAddress')}: ${item.email}`"
+                      @click.stop="copyAccount(item.email)">
+                <Icon icon="ion:copy-outline" width="16" height="16" aria-hidden="true"/>
+              </button>
               <el-dropdown trigger="click" placement="bottom-end" @click.stop>
                 <button type="button" class="account-actions" :class="{'is-active': isAllMailView(item)}"
                         :title="$t('mailboxActions', {email: item.email})"
@@ -35,7 +41,6 @@
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item disabled>{{ item.email }}</el-dropdown-item>
-                    <el-dropdown-item @click="copyAccount(item.email)">{{ $t('copyMailboxAddress') }}</el-dropdown-item>
                     <el-dropdown-item @click="setAllReceive(item)">
                       {{ isAllMailView(item) ? $t('showOnlyMailboxMail') : $t('showAllMailboxMail') }}
                     </el-dropdown-item>
@@ -703,6 +708,7 @@ path[fill="#ffdda1"] {
 
   .account-actions {
     display: flex;
+    flex-shrink: 0;
     align-items: center;
     justify-content: center;
     width: 28px;
