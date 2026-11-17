@@ -13,6 +13,10 @@
                @jump="jumpContent"
                @refresh-success="onRefreshSuccess"
   >
+    <template #first>
+      <el-tag v-if="accountStore.showAllMail" size="small" closable
+              @close="accountStore.selectAccount(accountStore.currentAccount)">{{ $t('allMailboxView') }}</el-tag>
+    </template>
   </emailScroll>
 </template>
 
@@ -41,6 +45,7 @@ const settingStore = useSettingStore();
 const scroll = ref({})
 const existIds = new Set();
 let pullTimer = null
+let viewVersion = 0
 
 onMounted(() => {
   emailStore.emailScroll = scroll;
@@ -63,13 +68,16 @@ onBeforeUnmount(() => {
   inboxWs.stop()
 })
 
-watch(() => accountStore.currentAccountId, () => {
+watch([() => accountStore.currentAccountId, () => accountStore.currentAllReceive], () => {
+  viewVersion++
+  existIds.clear()
   scroll.value.refreshList();
 })
 
 watch(
   () => emailStore.searchParams,
   () => {
+    viewVersion++
     scroll.value.refreshList()
   },
   {deep: true}
@@ -96,7 +104,7 @@ function jumpContent(email) {
 function onWsMessage(event) {
   // Update the sidebar even when this message belongs to an unselected mailbox.
   accountStore.markReceived(event?.accountId)
-  const allReceive = accountStore.currentAccount.allReceive
+  const allReceive = accountStore.currentAllReceive
   if (!allReceive && event?.accountId != null && Number(event.accountId) !== Number(accountStore.currentAccountId)) {
     return
   }
@@ -128,6 +136,7 @@ async function pullLatest() {
   const latestId = scroll.value.latestEmail?.emailId
   const accountId = accountStore.currentAccountId
   const allReceive = scroll.value.latestEmail?.allReceive
+  const requestVersion = viewVersion
 
   if (accountId !== scroll.value.latestEmail?.reqAccountId) {
     return
@@ -136,7 +145,7 @@ async function pullLatest() {
   try {
     const list = await emailLatest(latestId, accountId, allReceive);
 
-    if (accountId !== accountStore.currentAccountId || allReceive !== accountStore.currentAccount.allReceive) {
+    if (requestVersion !== viewVersion || accountId !== accountStore.currentAccountId || allReceive !== accountStore.currentAllReceive) {
       return
     }
 
@@ -144,6 +153,7 @@ async function pullLatest() {
       emailStore.applyFullList(list)
 
       for (let email of list) {
+        if (requestVersion !== viewVersion || accountId !== accountStore.currentAccountId || allReceive !== accountStore.currentAllReceive) return
 
         email.reqAccountId = accountId;
         email.allReceive = allReceive;
@@ -178,7 +188,7 @@ function cancelStar(email) {
 
 function getEmailList(emailId, size) {
   const accountId =  accountStore.currentAccountId;
-  const allReceive = accountStore.currentAccount.allReceive;
+  const allReceive = accountStore.currentAllReceive;
   return emailStore.fetchList(full =>
     emailList(accountId, allReceive, emailId, 0, size, 0, full, emailStore.searchParams)
   ).then(data => {

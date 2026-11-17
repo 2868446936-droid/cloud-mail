@@ -21,6 +21,7 @@ const en = {
     copyMailboxAddress: 'Copy full email address',
     showAllMailboxMail: 'View mail from all mailboxes',
     showOnlyMailboxMail: 'View only this mailbox',
+    allMailboxView: 'All mailboxes',
     loadMoreMailboxes: 'Load more mailboxes',
     batchCreateAccounts: 'Create mailboxes in bulk',
     batchAccountCount: 'Quantity (1–100)',

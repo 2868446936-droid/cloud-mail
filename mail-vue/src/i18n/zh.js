@@ -21,6 +21,7 @@ const zh = {
     copyMailboxAddress: '复制完整邮箱地址',
     showAllMailboxMail: '查看全部邮箱邮件',
     showOnlyMailboxMail: '仅查看此邮箱邮件',
+    allMailboxView: '全部邮箱视图',
     loadMoreMailboxes: '加载更多邮箱',
     batchCreateAccounts: '批量创建邮箱',
     batchAccountCount: '创建数量（1–100）',

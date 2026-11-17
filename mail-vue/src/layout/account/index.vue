@@ -27,7 +27,7 @@
                 {{ item.email.split('@')[0] }}
               </button>
               <el-dropdown trigger="click" placement="bottom-end" @click.stop>
-                <button type="button" class="account-actions" :class="{'is-active': item.allReceive}"
+                <button type="button" class="account-actions" :class="{'is-active': isAllMailView(item)}"
                         :title="$t('mailboxActions', {email: item.email})"
                         :aria-label="$t('mailboxActions', {email: item.email})" @click.stop>
                   <Icon icon="ion:ellipsis-horizontal" width="18" height="18" aria-hidden="true"/>
@@ -37,7 +37,7 @@
                     <el-dropdown-item disabled>{{ item.email }}</el-dropdown-item>
                     <el-dropdown-item @click="copyAccount(item.email)">{{ $t('copyMailboxAddress') }}</el-dropdown-item>
                     <el-dropdown-item @click="setAllReceive(item)">
-                      {{ item.allReceive ? $t('showOnlyMailboxMail') : $t('showAllMailboxMail') }}
+                      {{ isAllMailView(item) ? $t('showOnlyMailboxMail') : $t('showAllMailboxMail') }}
                     </el-dropdown-item>
                     <el-dropdown-item v-if="hasPerm('email:send')" @click="openSetName(item)">{{ $t('rename') }}</el-dropdown-item>
                     <el-dropdown-item v-if="item.accountId !== userStore.user.account.accountId" @click="setAsTop(item)">{{ $t('pin') }}</el-dropdown-item>
@@ -140,18 +140,15 @@ import {
   accountAdd,
   accountDelete,
   accountSetName,
-  accountSetAllReceive,
   accountSetAsTop
 } from "@/request/account.js";
 import {sleep} from "@/utils/time-utils.js"
 import {isEmail} from "@/utils/verify-utils.js";
 import {useSettingStore} from "@/store/setting.js";
 import {useAccountStore} from "@/store/account.js";
-import {useEmailStore} from "@/store/email.js";
 import {useUserStore} from "@/store/user.js";
 import {hasPerm} from "@/perm/perm.js"
 import {useI18n} from "vue-i18n";
-import {AccountAllReceiveEnum} from "@/enums/account-enum.js";
 import {reloadTurnstileScript} from "@/utils/turnstile-script.js";
 import BatchAccountDialog from "@/components/BatchAccountDialog.vue";
 import {groupAccounts} from "@/utils/account-groups.js";
@@ -160,7 +157,6 @@ const {t} = useI18n();
 const userStore = useUserStore();
 const accountStore = useAccountStore();
 const settingStore = useSettingStore();
-const emailStore = useEmailStore();
 const showAdd = ref(false)
 const showBatchAdd = ref(false)
 const addLoading = ref(false);
@@ -310,24 +306,11 @@ function openSetName(accountItem) {
 }
 
 function setAllReceive(account) {
-  let allReceiveAccount = accounts.find(account => account.allReceive === AccountAllReceiveEnum.ENABLED);
-  if (allReceiveAccount && allReceiveAccount.accountId !== account.accountId) allReceiveAccount.allReceive = AccountAllReceiveEnum.DISABLED;
-  account.allReceive = account.allReceive === AccountAllReceiveEnum.DISABLED ? AccountAllReceiveEnum.ENABLED : AccountAllReceiveEnum.DISABLED;
-  accountSetAllReceive(account.accountId).catch(() => {
-    account.allReceive = account.allReceive === AccountAllReceiveEnum.DISABLED ? AccountAllReceiveEnum.ENABLED : AccountAllReceiveEnum.DISABLED;
-    if (allReceiveAccount) allReceiveAccount.allReceive = AccountAllReceiveEnum.ENABLED;
-  }).then(() => {
-    if (account.allReceive === AccountAllReceiveEnum.ENABLED) {
-      ElMessage({
-        message: t('setSuccess'),
-        type: 'success',
-        plain: true,
-      })
-    }
-    changeAccount(account);
-    emailStore.emailScroll?.refreshList();
-    emailStore.sendScroll?.refreshList();
-  })
+  accountStore.selectAccount(account, !isAllMailView(account))
+}
+
+function isAllMailView(account) {
+  return accountStore.currentAccountId === account.accountId && accountStore.showAllMail
 }
 
 
@@ -391,8 +374,7 @@ watch(() => accountStore.listRefreshVersion, () => {
 })
 
 function changeAccount(account) {
-  accountStore.currentAccountId = account.accountId
-  accountStore.currentAccount = account
+  accountStore.selectAccount(account)
 }
 
 function add() {
@@ -466,8 +448,7 @@ function getAccountList() {
     if (selected) accountStore.currentAccount = selected
     else if ((!accountStore.currentAccountId || noLoading.value) && accounts.length) changeAccount(accounts[0])
     else if (noLoading.value && !accounts.length) {
-      accountStore.currentAccountId = 0
-      accountStore.currentAccount = {}
+      accountStore.selectAccount(null)
     }
 
     loading.value = false

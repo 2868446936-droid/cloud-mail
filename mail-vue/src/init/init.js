@@ -38,8 +38,7 @@ export async function init() {
         document.title = setting.title;
 
         if (user) {
-            accountStore.currentAccountId = user.account.accountId;
-            accountStore.currentAccount = user.account;
+            accountStore.selectAccount(user.account);
             userStore.user = user;
 
             const routers = permsToRouter(user.permKeys);
