@@ -48,7 +48,10 @@ onMounted(() => {
   inboxWs.start({
     isEnabled: () => isAutoRefreshEnabled(settingStore.settings.autoRefresh),
     onMessage: onWsMessage,
-    onReconnect: () => schedulePullLatest(),
+    onReconnect: () => {
+      accountStore.requestListRefresh()
+      schedulePullLatest()
+    },
   });
 })
 
@@ -91,6 +94,8 @@ function jumpContent(email) {
 
 // 推送到达：非「全部收取」时忽略其它账号的信。
 function onWsMessage(event) {
+  // Update the sidebar even when this message belongs to an unselected mailbox.
+  accountStore.markReceived(event?.accountId)
   const allReceive = accountStore.currentAccount.allReceive
   if (!allReceive && event?.accountId != null && Number(event.accountId) !== Number(accountStore.currentAccountId)) {
     return

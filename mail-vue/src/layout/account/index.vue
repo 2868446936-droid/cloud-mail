@@ -8,7 +8,10 @@
     </div>
     <el-scrollbar class="scrollbar" ref="scrollbarRef">
       <div v-infinite-scroll="getAccountList" :infinite-scroll-distance="600" :infinite-scroll-immediate="false">
-        <el-card class="item" :class="itemBg(item.accountId)" v-for="(item, index) in accounts" :key="item.accountId"
+        <section v-for="group in accountGroups" :key="group.key" class="account-group" :aria-label="$t(group.title)">
+          <h3 class="group-title">{{ $t(group.title) }}<span v-if="noLoading">{{ group.items.length }}</span></h3>
+          <p v-if="!group.items.length && noLoading" class="group-empty">{{ $t('accountGroupEmpty') }}</p>
+          <el-card class="item" :class="itemBg(item.accountId)" v-for="item in group.items" :key="item.accountId"
                  @click="changeAccount(item)">
           <div class="account">
             {{ item.email }}
@@ -27,7 +30,7 @@
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item v-if="hasPerm('email:send')" @click="openSetName(item)">{{ $t('rename') }}</el-dropdown-item>
-                    <el-dropdown-item v-if="item.accountId !== userStore.user.account.accountId" @click="setAsTop(item, index)">{{ $t('pin') }}</el-dropdown-item>
+                    <el-dropdown-item v-if="item.accountId !== userStore.user.account.accountId" @click="setAsTop(item)">{{ $t('pin') }}</el-dropdown-item>
                     <el-dropdown-item v-if="item.accountId !== userStore.user.account.accountId && hasPerm('account:delete')"
                                       @click="remove(item)">{{ $t('delete') }}
                     </el-dropdown-item>
@@ -37,6 +40,7 @@
             </div>
           </div>
         </el-card>
+        </section>
 
         <!-- Initial Loading Skeleton -->
         <template v-if="loading">
@@ -70,9 +74,6 @@
 
         <div class="noLoading" v-if="noLoading && accounts.length > 0">
           <div>{{ $t('noMoreData') }}</div>
-        </div>
-        <div class="empty" v-if="noLoading && accounts.length === 0">
-          <el-empty :description="$t('noMessagesFound')"/>
         </div>
       </div>
 
@@ -152,6 +153,7 @@ import {useI18n} from "vue-i18n";
 import {AccountAllReceiveEnum} from "@/enums/account-enum.js";
 import {reloadTurnstileScript} from "@/utils/turnstile-script.js";
 import BatchAccountDialog from "@/components/BatchAccountDialog.vue";
+import {groupAccounts} from "@/utils/account-groups.js";
 
 const {t} = useI18n();
 const userStore = useUserStore();
@@ -163,10 +165,11 @@ const showBatchAdd = ref(false)
 const addLoading = ref(false);
 const domainList = computed(() => settingStore.domainList)
 const accounts = reactive([])
+const accountGroups = computed(() => groupAccounts(accounts, accountStore.receivedAccountIds))
 const noLoading = ref(false)
 const loading = ref(false)
 const followLoading = ref(false);
-const batchRefreshPending = ref(false);
+const accountRefreshPending = ref(false);
 const verifyShow = ref(false)
 const setNameShow = ref(false)
 const setNameLoading = ref(false)
@@ -358,7 +361,8 @@ function remove(account) {
 }
 
 function refresh() {
-  if (loading.value) {
+  if (loading.value || followLoading.value) {
+    accountRefreshPending.value = true
     return
   }
   loading.value = false
@@ -373,19 +377,19 @@ function refresh() {
 }
 
 function refreshAfterBatch() {
-  if (loading.value || followLoading.value) {
-    batchRefreshPending.value = true
-  } else {
-    refresh()
-  }
+  refresh()
   userStore.refreshUserInfo()
 }
 
 watch([loading, followLoading], ([initialLoading, nextPageLoading]) => {
-  if (batchRefreshPending.value && !initialLoading && !nextPageLoading) {
-    batchRefreshPending.value = false
+  if (accountRefreshPending.value && !initialLoading && !nextPageLoading) {
+    accountRefreshPending.value = false
     refresh()
   }
+})
+
+watch(() => accountStore.listRefreshVersion, () => {
+  if (hasPerm('account:query')) refresh()
 })
 
 function changeAccount(account) {
@@ -401,7 +405,7 @@ function add() {
   }, 100)
 }
 
-function setAsTop(account, index) {
+function setAsTop(account) {
   accountSetAsTop(account.accountId).then(() => {
     ElMessage({
       message: t('setSuccess'),
@@ -409,8 +413,7 @@ function setAsTop(account, index) {
       plain: true,
     })
 
-    const [item] = accounts.splice(index, 1);
-    accounts.splice(1, 0, item);
+    refresh()
 
   });
 }
@@ -459,11 +462,15 @@ function getAccountList() {
     if (list.length < queryParams.size) {
       noLoading.value = true
     }
-    if (accounts.length === 0) {
-      accountStore.currentAccount = list[0]
-    }
-
     accounts.push(...list)
+
+    const selected = accounts.find(item => item.accountId === accountStore.currentAccountId)
+    if (selected) accountStore.currentAccount = selected
+    else if ((!accountStore.currentAccountId || noLoading.value) && accounts.length) changeAccount(accounts[0])
+    else if (noLoading.value && !accounts.length) {
+      accountStore.currentAccountId = 0
+      accountStore.currentAccount = {}
+    }
 
     loading.value = false
     followLoading.value = false
@@ -539,7 +546,7 @@ function submit() {
   accountAdd(addForm.email + addForm.suffix, verifyToken).then(account => {
     addLoading.value = false
     addForm.email = ''
-    accounts.push(account)
+    refresh()
     verifyToken = ''
     settingStore.settings.addVerifyOpen = account.addVerifyOpen
     ElMessage({
@@ -636,6 +643,31 @@ path[fill="#ffdda1"] {
   .btn {
     width: 100%;
     margin-top: 15px;
+  }
+
+  .group-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 14px 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--el-text-color-regular);
+  }
+
+  .group-title span {
+    color: var(--el-text-color-secondary);
+    font-weight: 400;
+  }
+
+  .group-empty {
+    padding: 4px 14px 14px;
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+  }
+
+  .account-group + .account-group {
+    border-top: 1px solid var(--el-border-color-lighter);
   }
 
   .item {

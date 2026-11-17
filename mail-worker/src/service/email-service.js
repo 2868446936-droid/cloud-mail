@@ -1047,6 +1047,7 @@ const emailService = {
 
 			const emailRow = await orm(c).insert(email).values(emailData).returning().get();
 			emailRowList.push(emailRow);
+			await accountService.markReceived(c, emailRow);
 			// 站内信同样：有 userId 推收件箱，无人收件只推全部邮件。
 			notifyMailWsFromContext(c, emailRow);
 
@@ -1216,6 +1217,7 @@ const emailService = {
 	async physicsDelete(c, params) {
 		let { emailIds } = params;
 		emailIds = emailIds.split(',').map(Number);
+		await accountService.preserveReceivedHistory(c, {emailIds});
 		await attService.removeByEmailIds(c, emailIds);
 		await starService.removeByEmailIds(c, emailIds);
 		await orm(c).delete(email).where(inArray(email.emailId, emailIds)).run();
@@ -1375,10 +1377,12 @@ const emailService = {
 	},
 
 	async completeReceive(c, status, emailId) {
-		return await orm(c).update(email).set({
+		const emailRow = await orm(c).update(email).set({
 			isDel: isDel.NORMAL,
 			status: status
 		}).where(eq(email.emailId, emailId)).returning().get();
+		await accountService.markReceived(c, emailRow);
+		return emailRow;
 	},
 
 	async completeReceiveAll(c) {
@@ -1489,6 +1493,7 @@ const emailService = {
 			return;
 		}
 
+		await accountService.preserveReceivedHistory(c, {emailIds});
 		await attService.removeByEmailIds(c, emailIds);
 
 		await orm(c).delete(email).where(conditions.length > 1 ? and(...conditions) : conditions[0]).run();

@@ -6,7 +6,7 @@ import emailService from './email-service';
 import orm from '../entity/orm';
 import account from '../entity/account';
 import { and, asc, eq, gt, inArray, count, sql, ne, or, lt, desc } from 'drizzle-orm';
-import {accountConst, isDel, settingConst} from '../const/entity-const';
+import {accountConst, emailConst, isDel, settingConst} from '../const/entity-const';
 import settingService from './setting-service';
 import turnstileService from './turnstile-service';
 import roleService from './role-service';
@@ -111,7 +111,50 @@ const accountService = {
 		return orm(c).select().from(account).where(sql`${account.email} COLLATE NOCASE = ${email}`).get();
 	},
 
-	list(c, params, userId) {
+	// The existing timestamp also records whether this address has ever received mail.
+	// Only completed incoming messages count; sending, drafts and unfinished saves do not.
+	async markReceived(c, emailRow) {
+		if (emailRow?.type !== emailConst.type.RECEIVE || emailRow?.status !== emailConst.status.RECEIVE
+			|| !emailRow.accountId || !emailRow.userId || !emailRow.createTime) return;
+
+		await c.env.db.prepare(`
+			UPDATE account SET latest_email_time = ?
+			WHERE account_id = ? AND user_id = ?
+			  AND (latest_email_time IS NULL OR latest_email_time < ?)
+		`).bind(emailRow.createTime, emailRow.accountId, emailRow.userId, emailRow.createTime).run();
+	},
+
+	// Backfill legacy history without a schema migration. Retain soft-deleted receipts,
+	// and preserve the marker before physical mail deletion can remove that evidence.
+	async preserveReceivedHistory(c, {userId, emailIds} = {}) {
+		const scopes = [];
+		if (emailIds) {
+			const ids = [...new Set(emailIds.filter(id => Number.isSafeInteger(id) && id > 0))];
+			for (let offset = 0; offset < ids.length; offset += 100) {
+				const batch = ids.slice(offset, offset + 100);
+				scopes.push({
+					condition: `account_id IN (SELECT account_id FROM email WHERE email_id IN (${batch.map(() => '?').join(',')}))`,
+					bindings: batch
+				});
+			}
+		} else if (Number.isSafeInteger(Number(userId)) && Number(userId) > 0) {
+			scopes.push({condition: 'user_id = ?', bindings: [Number(userId)]});
+		}
+		const receiptMatch = `history.account_id = account.account_id
+			AND history.user_id = account.user_id
+			AND history.type = ${emailConst.type.RECEIVE}
+			AND history.status = ${emailConst.status.RECEIVE}`;
+		for (const scope of scopes) {
+			await c.env.db.prepare(`
+				UPDATE account
+				SET latest_email_time = (SELECT MAX(history.create_time) FROM email AS history WHERE ${receiptMatch})
+				WHERE latest_email_time IS NULL AND ${scope.condition}
+				  AND EXISTS (SELECT 1 FROM email AS history WHERE ${receiptMatch})
+			`).bind(...scope.bindings).run();
+		}
+	},
+
+	async list(c, params, userId) {
 
 		let { accountId, size, lastSort } = params;
 
@@ -130,6 +173,9 @@ const accountService = {
 		if(Number.isNaN(lastSort)) {
 			lastSort = 9999999999;
 		}
+
+		// The first page backfills every address for this user, not just this page.
+		if (!accountId) await this.preserveReceivedHistory(c, {userId});
 
 		return orm(c).select().from(account).where(
 			and(
