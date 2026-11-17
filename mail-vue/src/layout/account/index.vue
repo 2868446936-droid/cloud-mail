@@ -9,26 +9,36 @@
     <el-scrollbar class="scrollbar" ref="scrollbarRef">
       <div v-infinite-scroll="getAccountList" :infinite-scroll-distance="600" :infinite-scroll-immediate="false">
         <section v-for="group in accountGroups" :key="group.key" class="account-group" :aria-label="$t(group.title)">
-          <h3 class="group-title">{{ $t(group.title) }}<span v-if="noLoading">{{ group.items.length }}</span></h3>
-          <p v-if="!group.items.length && noLoading" class="group-empty">{{ $t('accountGroupEmpty') }}</p>
-          <el-card class="item" :class="itemBg(item.accountId)" v-for="item in group.items" :key="item.accountId"
-                 @click="changeAccount(item)">
-          <div class="account">
-            {{ item.email }}
-          </div>
-          <div class="opt">
-            <div class="send-email" @click.stop>
-              <Icon @click="setAllReceive(item)" v-if="!item.allReceive" icon="eva:email-fill" width="22" height="22" color="#fccb1a"/>
-              <Icon @click="setAllReceive(item)" v-else icon="flat-color-icons:folder" width="22" height="22" color="#23c4f1" />
-            </div>
-            <div class="settings" @click.stop>
-              <Icon icon="fluent-color:clipboard-24" width="22" height="22" @click.stop="copyAccount(item.email)"/>
-              <Icon icon="fluent:settings-24-filled" width="21" height="21" color="#909399"
-                    v-if="showNullSetting(item)"/>
-              <el-dropdown v-else>
-                <Icon icon="fluent:settings-24-filled" width="21" height="21" color="#909399"/>
+          <h3 class="group-heading">
+            <button type="button" class="group-title" :aria-expanded="expandedGroups[group.key]"
+                    :aria-controls="`mailbox-group-${group.key}`"
+                    @click="expandedGroups[group.key] = !expandedGroups[group.key]">
+              <Icon icon="ion:chevron-down-outline" width="14" height="14" class="group-chevron"
+                    :class="{'is-collapsed': !expandedGroups[group.key]}" aria-hidden="true"/>
+              <span class="group-label">{{ $t(group.title) }}</span>
+              <span v-if="noLoading" class="group-count">{{ group.items.length }}</span>
+            </button>
+          </h3>
+          <div v-show="expandedGroups[group.key]" :id="`mailbox-group-${group.key}`">
+            <p v-if="!group.items.length && noLoading" class="group-empty">{{ $t('accountGroupEmpty') }}</p>
+            <div class="item" :class="itemBg(item.accountId)" v-for="item in group.items" :key="item.accountId">
+              <button type="button" class="account-name" :title="item.email" :aria-label="item.email"
+                      :aria-pressed="accountStore.currentAccountId === item.accountId" @click="changeAccount(item)">
+                {{ item.email.split('@')[0] }}
+              </button>
+              <el-dropdown trigger="click" placement="bottom-end" @click.stop>
+                <button type="button" class="account-actions" :class="{'is-active': item.allReceive}"
+                        :title="$t('mailboxActions', {email: item.email})"
+                        :aria-label="$t('mailboxActions', {email: item.email})" @click.stop>
+                  <Icon icon="ion:ellipsis-horizontal" width="18" height="18" aria-hidden="true"/>
+                </button>
                 <template #dropdown>
                   <el-dropdown-menu>
+                    <el-dropdown-item disabled>{{ item.email }}</el-dropdown-item>
+                    <el-dropdown-item @click="copyAccount(item.email)">{{ $t('copyMailboxAddress') }}</el-dropdown-item>
+                    <el-dropdown-item @click="setAllReceive(item)">
+                      {{ item.allReceive ? $t('showOnlyMailboxMail') : $t('showAllMailboxMail') }}
+                    </el-dropdown-item>
                     <el-dropdown-item v-if="hasPerm('email:send')" @click="openSetName(item)">{{ $t('rename') }}</el-dropdown-item>
                     <el-dropdown-item v-if="item.accountId !== userStore.user.account.accountId" @click="setAsTop(item)">{{ $t('pin') }}</el-dropdown-item>
                     <el-dropdown-item v-if="item.accountId !== userStore.user.account.accountId && hasPerm('account:delete')"
@@ -39,38 +49,29 @@
               </el-dropdown>
             </div>
           </div>
-        </el-card>
         </section>
 
         <!-- Initial Loading Skeleton -->
         <template v-if="loading">
           <el-skeleton v-for="i in skeletonRows" :key="i" animated>
             <template #template>
-              <el-card class="item">
-                <el-skeleton-item variant="p" style="width: 70%; height: 20px; margin-bottom: 25px"/>
-                <div style="display: flex; justify-content: space-between">
-                  <el-skeleton-item variant="text" style="width: 20px"/>
-                  <el-skeleton-item variant="text" style="width: 20px"/>
-                </div>
-              </el-card>
+              <div class="item skeleton-row"><el-skeleton-item variant="text" style="width: 70%; height: 14px"/></div>
             </template>
           </el-skeleton>
         </template>
 
         <!-- Follow Loading Skeleton -->
-        <template v-if="accounts.length > 0 && !noLoading">
+        <template v-if="followLoading">
           <el-skeleton animated>
             <template #template>
-              <el-card class="item">
-                <el-skeleton-item variant="p" style="width: 70%; height: 20px; margin-bottom: 20px"/>
-                <div style="display: flex; justify-content: space-between">
-                  <el-skeleton-item variant="text" style="width: 20px"/>
-                  <el-skeleton-item variant="text" style="width: 20px"/>
-                </div>
-              </el-card>
+              <div class="item skeleton-row"><el-skeleton-item variant="text" style="width: 70%; height: 14px"/></div>
             </template>
           </el-skeleton>
         </template>
+
+        <div class="load-more" v-if="!noLoading && !loading">
+          <el-button text size="small" :loading="followLoading" @click="getAccountList">{{ $t('loadMoreMailboxes') }}</el-button>
+        </div>
 
         <div class="noLoading" v-if="noLoading && accounts.length > 0">
           <div>{{ $t('noMoreData') }}</div>
@@ -166,6 +167,7 @@ const addLoading = ref(false);
 const domainList = computed(() => settingStore.domainList)
 const accounts = reactive([])
 const accountGroups = computed(() => groupAccounts(accounts, accountStore.receivedAccountIds))
+const expandedGroups = reactive({received: false, neverReceived: true})
 const noLoading = ref(false)
 const loading = ref(false)
 const followLoading = ref(false);
@@ -328,10 +330,6 @@ function setAllReceive(account) {
   })
 }
 
-
-function showNullSetting(item) {
-  return !hasPerm('email:send') && !(item.accountId !== userStore.user.account.accountId && hasPerm('account:delete'))
-}
 
 function itemBg(accountId) {
   return accountStore.currentAccountId === accountId ? 'item-choose' : ''
@@ -645,17 +643,40 @@ path[fill="#ffdda1"] {
     margin-top: 15px;
   }
 
+  .group-heading {
+    margin: 0;
+  }
+
   .group-title {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    padding: 12px 14px 8px;
-    font-size: 13px;
+    gap: 6px;
+    width: 100%;
+    min-height: 34px;
+    padding: 6px 10px;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
+    font-size: 12px;
     font-weight: 600;
     color: var(--el-text-color-regular);
   }
 
-  .group-title span {
+  .group-label {
+    flex: 1;
+  }
+
+  .group-chevron {
+    flex-shrink: 0;
+    transition: transform .15s;
+  }
+
+  .group-chevron.is-collapsed {
+    transform: rotate(-90deg);
+  }
+
+  .group-count {
     color: var(--el-text-color-secondary);
     font-weight: 400;
   }
@@ -671,48 +692,67 @@ path[fill="#ffdda1"] {
   }
 
   .item {
-    background-color: var(--el-bg-color);
-    border-radius: 8px;
-    padding: 10px;
-    margin-bottom: 11px;
-    margin-left: 10px;
-    margin-right: 10px;
-    cursor: pointer;
-
-    .account {
-      font-weight: 400;
-      font-size: 15px;
-      margin-bottom: 20px;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
-    }
-
-    .opt {
-      display: flex;
-      justify-content: space-between;
-      font-size: 12px;
-      color: #888;
-
-      .settings {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-
-      .send-email {
-        display: flex;
-        align-items: center;
-      }
-    }
-
-    :deep(.el-card__body) {
-      padding: 0;
-    }
+    display: flex;
+    align-items: center;
+    min-height: 32px;
+    margin: 2px 6px;
+    border-radius: 5px;
+    color: var(--el-text-color-primary);
   }
 
-  .item:first-child {
-    margin-top: 10px;
+  .item:hover, .group-title:hover {
+    background-color: var(--el-fill-color-light);
+  }
+
+  .account-name {
+    flex: 1;
+    min-width: 0;
+    height: 32px;
+    padding: 5px 8px;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-size: 13px;
+    text-align: left;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    cursor: pointer;
+  }
+
+  .account-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    margin-right: 2px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--el-text-color-secondary);
+    cursor: pointer;
+  }
+
+  .account-actions:hover, .account-actions.is-active {
+    color: var(--el-color-primary);
+    background-color: var(--el-color-primary-light-9);
+  }
+
+  .account-name:focus-visible, .account-actions:focus-visible, .group-title:focus-visible {
+    outline: 2px solid var(--el-color-primary);
+    outline-offset: -2px;
+  }
+
+  .skeleton-row {
+    padding: 8px;
+  }
+
+  .load-more {
+    display: flex;
+    justify-content: center;
+    padding: 5px;
   }
 
   .item-choose {
