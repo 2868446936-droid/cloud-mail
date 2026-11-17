@@ -168,6 +168,7 @@ const en = {
     expired: 'Expired',
     copy: 'Copy',
     copyCode: 'Copy Code',
+    copyOpenAiCode: 'Copy OpenAI / ChatGPT verification code',
     codeLabel: 'Code: ',
     history: 'History',
     addRegKey: 'Add invite code',
