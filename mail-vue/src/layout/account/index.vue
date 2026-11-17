@@ -3,6 +3,8 @@
     <div class="head-opt">
       <Icon v-perm="'account:add'" class="icon add" icon="ion:add-outline" width="23" height="23" @click="add"/>
       <Icon class="icon refresh" icon="ion:reload" width="18" height="18" @click="refresh"/>
+      <el-button v-perm="'account:add'" class="batch-create" size="small" type="primary" plain
+                 @click="showBatchAdd = true">{{ $t('batchCreateAccounts') }}</el-button>
     </div>
     <el-scrollbar class="scrollbar" ref="scrollbarRef">
       <div v-infinite-scroll="getAccountList" :infinite-scroll-distance="600" :infinite-scroll-immediate="false">
@@ -75,6 +77,7 @@
       </div>
 
     </el-scrollbar>
+    <BatchAccountDialog v-model="showBatchAdd" @settled="refreshAfterBatch" />
     <el-dialog v-model="showAdd" :title="$t('addAccount')">
       <div class="container">
         <el-input v-model="addForm.email" ref="addRef" type="text" :placeholder="$t('emailAccount')" autocomplete="off" @keyup.enter="submit">
@@ -148,6 +151,7 @@ import {hasPerm} from "@/perm/perm.js"
 import {useI18n} from "vue-i18n";
 import {AccountAllReceiveEnum} from "@/enums/account-enum.js";
 import {reloadTurnstileScript} from "@/utils/turnstile-script.js";
+import BatchAccountDialog from "@/components/BatchAccountDialog.vue";
 
 const {t} = useI18n();
 const userStore = useUserStore();
@@ -155,12 +159,14 @@ const accountStore = useAccountStore();
 const settingStore = useSettingStore();
 const emailStore = useEmailStore();
 const showAdd = ref(false)
+const showBatchAdd = ref(false)
 const addLoading = ref(false);
 const domainList = computed(() => settingStore.domainList)
 const accounts = reactive([])
 const noLoading = ref(false)
 const loading = ref(false)
 const followLoading = ref(false);
+const batchRefreshPending = ref(false);
 const verifyShow = ref(false)
 const setNameShow = ref(false)
 const setNameLoading = ref(false)
@@ -365,6 +371,22 @@ function refresh() {
   accounts.splice(0, accounts.length)
   getAccountList()
 }
+
+function refreshAfterBatch() {
+  if (loading.value || followLoading.value) {
+    batchRefreshPending.value = true
+  } else {
+    refresh()
+  }
+  userStore.refreshUserInfo()
+}
+
+watch([loading, followLoading], ([initialLoading, nextPageLoading]) => {
+  if (batchRefreshPending.value && !initialLoading && !nextPageLoading) {
+    batchRefreshPending.value = false
+    refresh()
+  }
+})
 
 function changeAccount(account) {
   accountStore.currentAccountId = account.accountId
@@ -575,6 +597,11 @@ path[fill="#ffdda1"] {
 
     .add {
       margin-left: 2px;
+    }
+
+    .batch-create {
+      margin-left: auto;
+      padding: 5px 8px;
     }
 
     .head-opt:not(.add) .refresh {
