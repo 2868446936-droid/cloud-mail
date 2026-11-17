@@ -83,7 +83,14 @@
                   <div class="email-text">
                     <span class="email-subject" :style="(item.unread === EmailUnreadEnum.UNREAD && showUnread)  ? 'font-weight: bold' : ''">
                       <div class="unread" v-if="!isMobile && (item.unread === EmailUnreadEnum.UNREAD && showUnread) "/>
-                      <span v-if="item.code" class="code-tag" @click.stop="copyCode(item.code)">[{{ t('codeLabel') }}{{ item.code }}]</span>
+                      <button v-if="openAiCodes.has(item.emailId)" type="button" class="openai-code-copy"
+                              :title="`${t('copyCode')}: ${openAiCodes.get(item.emailId)}`"
+                              :aria-label="t('copyOpenAiCode')"
+                              @click.stop="copyCode(openAiCodes.get(item.emailId))">
+                        <Icon icon="ion:copy-outline" width="14" height="14" aria-hidden="true"/>
+                        {{ t('copyCode') }}
+                      </button>
+                      <span v-if="item.code && !openAiCodes.has(item.emailId)" class="code-tag" @click.stop="copyCode(item.code)">[{{ t('codeLabel') }}{{ item.code }}]</span>
                       <span class="subject-text">
                         <slot name="subject" :email="item" >
                           <span v-html="item.subjectHtml"></span>
@@ -247,6 +254,7 @@ import {useI18n} from "vue-i18n";
 import {EmailUnreadEnum} from "@/enums/email-enum.js";
 import { UseVirtualList } from '@vueuse/components'
 import { useScroll } from '@vueuse/core'
+import {getOpenAiVerificationCode} from '@/utils/openai-code.js'
 
 const props = defineProps({
   getEmailList: Function,
@@ -312,6 +320,16 @@ const loading = ref(false);
 const followLoading = ref(false);
 const noLoading = ref(false);
 const emailList = reactive([])
+// Full bodies arrive after the brief list; new messages also enter this cache.
+const openAiCodes = computed(() => {
+  const codes = new Map()
+  if (props.type !== 'all-email') return codes
+  for (const item of emailList) {
+    const code = getOpenAiVerificationCode(emailStore.detailMap[item.emailId] || item)
+    if (code) codes.set(item.emailId, code)
+  }
+  return codes
+})
 const expandList = reactive([])
 const total = ref(0);
 const checkAll = ref(false);
@@ -659,6 +677,7 @@ function handleSearch(type, value) {
 }
 
 async function copyCode(code) {
+  if (typeof code !== 'string' || !code.trim()) return
   try {
     await navigator.clipboard.writeText(code);
     ElMessage({
@@ -1266,6 +1285,31 @@ function renderHighlight(value) {
         white-space: nowrap;
         text-overflow: ellipsis;
         cursor: pointer;
+      }
+
+      .openai-code-copy {
+        display: inline-flex;
+        align-items: center;
+        flex: 0 0 auto;
+        gap: 4px;
+        padding: 1px 6px;
+        border: 1px solid var(--el-color-primary-light-5);
+        border-radius: 4px;
+        background: var(--el-color-primary-light-9);
+        color: var(--el-color-primary);
+        font-size: 12px;
+        font-weight: normal;
+        line-height: 20px;
+        cursor: pointer;
+      }
+
+      .openai-code-copy:hover {
+        border-color: var(--el-color-primary);
+      }
+
+      .openai-code-copy:focus-visible {
+        outline: 2px solid var(--el-color-primary);
+        outline-offset: 2px;
       }
 
       .subject-text {

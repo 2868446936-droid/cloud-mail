@@ -168,6 +168,7 @@ const zh = {
     expired: '已过期',
     copy: '复制',
     copyCode: '复制验证码',
+    copyOpenAiCode: '复制 OpenAI / ChatGPT 验证码',
     codeLabel: '验证码：',
     history: '记录',
     addRegKey: '添加注册码',
