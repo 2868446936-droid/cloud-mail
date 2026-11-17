@@ -324,6 +324,7 @@ const scrollbarRef = ref(null)
 // iPad can report a Mac platform when requesting desktop websites.
 const isMacOS = /Mac/.test(navigator.platform) && navigator.maxTouchPoints <= 1
 let reqLock = false
+let requestGeneration = 0
 let isMobile = ref(innerWidth < 1367)
 let skeletonRows = 0
 const timePaddingRight = ref('');
@@ -381,6 +382,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  requestGeneration++
   clearInterval(timer)
 })
 
@@ -432,7 +434,7 @@ watch(followLoading, (isFollowLoading) => {
     })
   } else {
     const index = expandList.findIndex(item => item.expand === 'loading')
-    expandList.splice(index, 1);
+    if (index !== -1) expandList.splice(index, 1);
   }
 });
 
@@ -444,7 +446,7 @@ watch(noLoading, (isNoLoading) => {
     })
   } else {
     const index = expandList.findIndex(item => item.expand === 'noMoreData')
-    expandList.splice(index, 1);
+    if (index !== -1) expandList.splice(index, 1);
   }
 })
 
@@ -823,24 +825,26 @@ function jumpDetails(email) {
 
 function getEmailList(refresh = false) {
 
-  if (reqLock) return Promise.resolve(false);
+  // A mailbox/scope change must supersede an in-flight request, not be dropped.
+  // Pagination remains locked within the current generation.
+  if (!refresh && (reqLock || loading.value || noLoading.value)) return Promise.resolve(false);
+  if (refresh) requestGeneration++
+  const generation = requestGeneration
 
   let emailId = emailList.length > 0 ? emailList.at(-1).emailId : 0;
 
   reqLock = true
 
-  if (!refresh) {
-
-    if (loading.value || noLoading.value) {
-      reqLock = false
-      return Promise.resolve(false)
-    }
-
-  } else {
+  if (refresh) {
     getSkeletonRows()
     emailId = 0
     loading.value = true
     scrollTop = 0
+    emailList.length = 0
+    total.value = 0
+    latestEmail.value = null
+    noLoading.value = false
+    followLoading.value = false
   }
 
   if (emailList.length === 0) {
@@ -850,39 +854,45 @@ function getEmailList(refresh = false) {
   }
   let start = Date.now();
 
-  return props.getEmailList(emailId, queryParam.size).then(async data => {
-    let end = Date.now();
-    let duration = end - start;
-    if (duration < 300 && !emailId) {
+  return (async () => {
+    try {
+      const data = await props.getEmailList(emailId, queryParam.size)
+      if (generation !== requestGeneration) return false
+
+      let end = Date.now();
+      let duration = end - start;
+      if (duration < 300 && !emailId) {
         await sleep(300 - duration)
+      }
+      // Scope may change while the minimum skeleton-display delay is pending.
+      if (generation !== requestGeneration) return false
+      firstLoad.value = false
+
+      let list = data.list.map(item => ({
+        ...item,
+        checked: false
+      }));
+
+      latestEmail.value = data.latestEmail
+      handleList(list);
+      emailList.push(...list);
+      if (refresh) scrollbarRef.value?.setScrollTop(0);
+
+      noLoading.value = data.list.length < queryParam.size;
+      followLoading.value = data.list.length >= queryParam.size;
+      total.value = data.total;
+      return true;
+    } catch (error) {
+      if (generation !== requestGeneration) return false
+      throw error
+    } finally {
+      // An obsolete response must not unlock or hide the current request.
+      if (generation === requestGeneration) {
+        loading.value = false
+        reqLock = false
+      }
     }
-    firstLoad.value = false
-
-    let list = data.list.map(item => ({
-      ...item,
-      checked: false
-    }));
-
-
-    if (refresh) {
-      emailList.length = 0
-    }
-
-    latestEmail.value = data.latestEmail
-
-    handleList(list);
-    emailList.push(...list);
-    if (refresh) scrollbarRef.value?.setScrollTop(0);
-
-    noLoading.value = data.list.length < queryParam.size;
-    followLoading.value = data.list.length >= queryParam.size;
-
-    total.value = data.total;
-    return true;
-  }).finally(() => {
-    loading.value = false
-    reqLock = false
-  })
+  })()
 }
 
 function handleList(list) {
@@ -936,7 +946,7 @@ function refresh() {
 function refreshList() {
   checkAll.value = false;
   isIndeterminate.value = false;
-  getEmailList(true);
+  return getEmailList(true).catch(() => false);
 }
 
 function loadData() {

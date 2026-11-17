@@ -472,8 +472,7 @@ async function saveToken(token) {
   localStorage.setItem('token', token)
   refreshWebsiteConfig()
   const user = await loginUserInfo();
-  accountStore.currentAccountId = user.account.accountId;
-  accountStore.currentAccount = user.account;
+  accountStore.selectAccount(user.account);
   userStore.user = user;
   const routers = permsToRouter(user.permKeys);
   routers.forEach(routerData => {

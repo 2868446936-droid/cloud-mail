@@ -12,6 +12,10 @@
                @jump="jumpContent"
                :type="'send'"
   >
+    <template #first>
+      <el-tag v-if="accountStore.showAllMail" size="small" closable
+              @close="accountStore.selectAccount(accountStore.currentAccount)">{{ $t('allMailboxView') }}</el-tag>
+    </template>
   </emailScroll>
 </template>
 
@@ -37,7 +41,7 @@ onMounted(() => {
   emailStore.sendScroll = sendScroll;
 })
 
-watch(() => accountStore.currentAccountId, () => {
+watch([() => accountStore.currentAccountId, () => accountStore.currentAllReceive], () => {
   sendScroll.value.refreshList();
 })
 
@@ -67,7 +71,7 @@ function cancelStar(email) {
 
 function getEmailList(emailId, size) {
   const accountId =  accountStore.currentAccountId;
-  const allReceive = accountStore.currentAccount.allReceive;
+  const allReceive = accountStore.currentAllReceive;
   return emailStore.fetchList(full =>
     emailList(accountId, allReceive, emailId, 0, size, 1, full, sendStore.searchParams)
   ).then(data => {

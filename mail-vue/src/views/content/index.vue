@@ -134,7 +134,7 @@ const sentViaEmail = computed(() => {
   return address
 })
 
-watch(() => accountStore.currentAccountId, () => {
+watch([() => accountStore.currentAccountId, () => accountStore.currentAllReceive], () => {
   handleBack()
 })
 
